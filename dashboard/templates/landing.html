@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Landing Page</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      .clickable-row { cursor: pointer; }
+      .state-on { background-color: #d4edda !important; }
+      .state-off { background-color: #f8d7da !important; }
+      .state-unknown { background-color: #e2e3e5 !important; }
+
+      .detail-on { border: 2px solid #28a745 !important; }
+      .detail-off { border: 2px solid #dc3545 !important; }
+      .detail-unknown { border: 2px solid #6c757d !important; }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="#">Device Manager</a>
+    <div class="collapse navbar-collapse justify-content-end">
+      <ul class="navbar-nav mb-2 mb-lg-0">
+        <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-5">
+    <h1 class="mb-4">Landing Page</h1>
+    <div id="detailCard" class="card mb-4 detail-unknown">
+        <div class="card-body">
+            <h5 class="card-title">Device Details</h5>
+            <p><strong>Device IP:</strong> <span id="detailIP">{{ deviceIP }}</span></p>
+            <p><strong>Device Type:</strong> <span id="detailType">{{ deviceType }}</span></p>
+            <p><strong>Channel:</strong> <span id="detailChannel">{{ channel }}</span></p>
+            <div id="detailButtonContainer" class="mt-3" style="display:none;">
+              <button class="btn btn-primary" id="detailActionButton">Perform Action</button>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="mb-3">Stored Devices</h2>
+    {% if devices %}
+    <table class="table table-striped table-hover" id="devicesTable">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">IP</th>
+          <th scope="col">Type</th>
+          <th scope="col">Channel</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for dev in devices %}
+        <tr class="clickable-row" 
+            data-ip="{{ dev.ip }}" 
+            data-type="{{ dev.type }}" 
+            data-channel="{{ dev.channel }}"
+            data-name="{{ dev.name }}">
+          <td>{{ dev.name }}</td>
+          <td>{{ dev.ip }}</td>
+          <td>{{ dev.type }}</td>
+          <td>{{ dev.channel }}</td>
+          <td>
+            <a href="{{ url_for('edit', device_ip=dev.ip) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="alert alert-info" role="alert">
+        No devices have been added yet.
+    </div>
+    {% endif %}
+
+    <div class="mt-4">
+        <a href="{{ url_for('add') }}" class="btn btn-success">Add New Device</a>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  const detailIP = document.getElementById('detailIP');
+  const detailType = document.getElementById('detailType');
+  const detailChannel = document.getElementById('detailChannel');
+  const detailButtonContainer = document.getElementById('detailButtonContainer');
+  const detailCard = document.getElementById('detailCard');
+  const detailActionButton = document.getElementById('detailActionButton');
+
+  const deviceStates = {};
+
+  function setDetailColor(state) {
+    detailCard.classList.remove('detail-on', 'detail-off', 'detail-unknown');
+    if (state === 'on') {
+      detailCard.classList.add('detail-on');
+    } else if (state === 'off') {
+      detailCard.classList.add('detail-off');
+    } else {
+      detailCard.classList.add('detail-unknown');
+    }
+  }
+
+  function fetchDeviceState(ip, row) {
+    const url = `http://${ip}/relay/0`;
+    return fetch(url, {method: 'GET'})
+      .then(response => response.json())
+      .then(data => {
+        const isOn = data.ison === true;
+        const state = isOn ? 'on' : 'off';
+        deviceStates[ip] = state;
+        updateRowColor(row, state);
+      })
+      .catch(() => {
+        deviceStates[ip] = 'unknown';
+        updateRowColor(row, 'unknown');
+      });
+  }
+
+  function updateRowColor(row, state) {
+    row.classList.remove('state-on', 'state-off', 'state-unknown');
+    if (state === 'on') row.classList.add('state-on');
+    else if (state === 'off') row.classList.add('state-off');
+    else row.classList.add('state-unknown');
+  }
+
+  function updateAllDeviceStates() {
+    const rows = document.querySelectorAll('#devicesTable tbody tr');
+    const fetchPromises = [];
+
+    rows.forEach(row => {
+      const ip = row.getAttribute('data-ip');
+      if (ip) fetchPromises.push(fetchDeviceState(ip, row));
+    });
+
+    Promise.allSettled(fetchPromises).then(() => {
+      const selectedIP = detailIP.textContent.trim();
+      if (selectedIP) {
+        const state = deviceStates[selectedIP] || 'unknown';
+        setDetailColor(state);
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    updateAllDeviceStates();
+    setInterval(updateAllDeviceStates, 60000);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (e.target && e.target.closest('tr.clickable-row') && !e.target.closest('a')) {
+      const row = e.target.closest('tr.clickable-row');
+      const ip = row.getAttribute('data-ip');
+      const type = row.getAttribute('data-type');
+      const channel = row.getAttribute('data-channel');
+
+      detailIP.textContent = ip;
+      detailType.textContent = type;
+      detailChannel.textContent = channel;
+
+      detailButtonContainer.style.display = 'block';
+      const state = deviceStates[ip] || 'unknown';
+      setDetailColor(state);
+    }
+  });
+
+  detailActionButton.addEventListener('click', function() {
+    alert('Action performed on ' + detailIP.textContent);
+  });
+</script>
+</body>
+</html>
+
