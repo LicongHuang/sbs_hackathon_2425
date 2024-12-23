@@ -112,6 +112,6 @@ def edit(device_ip):
 
 if __name__ == '__main__':
     # If you have certificates:
-    app.run(ssl_context=('cert.pem', 'key.pem'), host='0.0.0.0', port=5000, debug=True)
-    #app.run(host='0.0.0.0', port=5000, debug=True)
+    # app.run(ssl_context=('cert.pem', 'key.pem'), host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
