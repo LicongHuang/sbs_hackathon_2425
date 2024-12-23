@@ -1,7 +1,8 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from functools import wraps
 import json
 import os
+import requests  # <-- We use requests to talk to Shelly devices
 
 app = Flask(__name__)
 app.secret_key = 'some_secret_key_for_sessions'
@@ -110,8 +111,48 @@ def edit(device_ip):
 
     return render_template('edit.html', device=device)
 
+
+##########################################################
+# NEW: Proxy endpoints to avoid CORS
+##########################################################
+
+@app.route('/api/get_device_state', methods=['GET'])
+@login_required
+def get_device_state():
+    """Fetch the current 'ison' state from a Shelly device, server-side."""
+    device_ip = request.args.get('ip')
+    if not device_ip:
+        return jsonify({"error": "No IP provided"}), 400
+
+    url = f"http://{device_ip}/relay/0"
+    try:
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/toggle_relay', methods=['GET'])
+@login_required
+def toggle_relay():
+    """Toggle the relay on or off via the server, avoiding direct browser calls."""
+    device_ip = request.args.get('ip')
+    turn_action = request.args.get('turn')  # "on" or "off"
+    if not device_ip or not turn_action:
+        return jsonify({"error": "Missing IP or turn action"}), 400
+
+    url = f"http://{device_ip}/relay/0?turn={turn_action}"
+    try:
+        r = requests.get(url, timeout=5)
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
-    # If you have certificates:
-    # app.run(ssl_context=('cert.pem', 'key.pem'), host='0.0.0.0', port=5000, debug=True)
+    # If you want HTTP (no TLS):
     app.run(host='0.0.0.0', port=5000, debug=True)
+
+    # If you had SSL certs:
+    # app.run(ssl_context=('cert.pem', 'key.pem'), host='0.0.0.0', port=5000, debug=True)
 

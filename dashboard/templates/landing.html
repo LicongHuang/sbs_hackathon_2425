@@ -41,7 +41,7 @@
             <p><strong>Device Type:</strong> <span id="detailType">{{ deviceType }}</span></p>
             <p><strong>Channel:</strong> <span id="detailChannel">{{ channel }}</span></p>
             <div id="detailButtonContainer" class="mt-3" style="display:none;">
-              <button class="btn btn-primary" id="detailActionButton">Perform Action</button>
+              <button class="btn btn-primary" id="detailActionButton">Toggle ON/OFF</button>
             </div>
         </div>
     </div>
@@ -60,9 +60,9 @@
       </thead>
       <tbody>
       {% for dev in devices %}
-        <tr class="clickable-row" 
-            data-ip="{{ dev.ip }}" 
-            data-type="{{ dev.type }}" 
+        <tr class="clickable-row"
+            data-ip="{{ dev.ip }}"
+            data-type="{{ dev.type }}"
             data-channel="{{ dev.channel }}"
             data-name="{{ dev.name }}">
           <td>{{ dev.name }}</td>
@@ -87,6 +87,7 @@
     </div>
 </div>
 
+<!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   const detailIP = document.getElementById('detailIP');
@@ -96,8 +97,10 @@
   const detailCard = document.getElementById('detailCard');
   const detailActionButton = document.getElementById('detailActionButton');
 
+  // We'll store device states here: { "192.168.1.10": "on"/"off"/"unknown", ... }
   const deviceStates = {};
 
+  // Set detail card's border color
   function setDetailColor(state) {
     detailCard.classList.remove('detail-on', 'detail-off', 'detail-unknown');
     if (state === 'on') {
@@ -109,15 +112,22 @@
     }
   }
 
+  // Fetch the device's current state from the server (Flask route /api/get_device_state)
   function fetchDeviceState(ip, row) {
-    const url = `http://${ip}/relay/0`;
-    return fetch(url, {method: 'GET'})
+    const url = `/api/get_device_state?ip=${ip}`;
+    return fetch(url)
       .then(response => response.json())
       .then(data => {
-        const isOn = data.ison === true;
-        const state = isOn ? 'on' : 'off';
-        deviceStates[ip] = state;
-        updateRowColor(row, state);
+        // Shelly returns { ison: true/false } if successful
+        if ('ison' in data) {
+          const isOn = data.ison === true;
+          const state = isOn ? 'on' : 'off';
+          deviceStates[ip] = state;
+          updateRowColor(row, state);
+        } else {
+          deviceStates[ip] = 'unknown';
+          updateRowColor(row, 'unknown');
+        }
       })
       .catch(() => {
         deviceStates[ip] = 'unknown';
@@ -127,21 +137,29 @@
 
   function updateRowColor(row, state) {
     row.classList.remove('state-on', 'state-off', 'state-unknown');
-    if (state === 'on') row.classList.add('state-on');
-    else if (state === 'off') row.classList.add('state-off');
-    else row.classList.add('state-unknown');
+    if (state === 'on') {
+      row.classList.add('state-on');
+    } else if (state === 'off') {
+      row.classList.add('state-off');
+    } else {
+      row.classList.add('state-unknown');
+    }
   }
 
+  // Fetch states for all devices in the table
   function updateAllDeviceStates() {
     const rows = document.querySelectorAll('#devicesTable tbody tr');
     const fetchPromises = [];
 
     rows.forEach(row => {
       const ip = row.getAttribute('data-ip');
-      if (ip) fetchPromises.push(fetchDeviceState(ip, row));
+      if (ip) {
+        fetchPromises.push(fetchDeviceState(ip, row));
+      }
     });
 
     Promise.allSettled(fetchPromises).then(() => {
+      // If there's a currently selected device, update the detail card color
       const selectedIP = detailIP.textContent.trim();
       if (selectedIP) {
         const state = deviceStates[selectedIP] || 'unknown';
@@ -150,11 +168,43 @@
     });
   }
 
+  // Toggle the selected device's relay ON/OFF
+  function toggleRelay() {
+    const ip = detailIP.textContent.trim();
+    if (!ip) {
+      alert('No device selected.');
+      return;
+    }
+    // Current state from deviceStates
+    const currentState = deviceStates[ip];
+    // Decide new state
+    const newState = (currentState === 'off' || currentState === 'unknown') ? 'on' : 'off';
+
+    // Call our server route /api/toggle_relay
+    const url = `/api/toggle_relay?ip=${ip}&turn=${newState}`;
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === "success") {
+          // Re-fetch device states
+          updateAllDeviceStates();
+        } else {
+          alert(`Error toggling relay: ${data.error}`);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        alert('Failed to toggle relay.');
+      });
+  }
+
+  // On page load, fetch states & set interval
   document.addEventListener('DOMContentLoaded', () => {
     updateAllDeviceStates();
     setInterval(updateAllDeviceStates, 60000);
   });
 
+  // Clicking on a row sets the detail panel
   document.addEventListener('click', function(e) {
     if (e.target && e.target.closest('tr.clickable-row') && !e.target.closest('a')) {
       const row = e.target.closest('tr.clickable-row');
@@ -172,8 +222,9 @@
     }
   });
 
-  detailActionButton.addEventListener('click', function() {
-    alert('Action performed on ' + detailIP.textContent);
+  // Toggle relay on button click
+  detailActionButton.addEventListener('click', () => {
+    toggleRelay();
   });
 </script>
 </body>
