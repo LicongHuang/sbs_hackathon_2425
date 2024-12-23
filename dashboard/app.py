@@ -36,6 +36,7 @@ def save_devices(devices):
     with open(DEVICES_FILE, 'w') as f:
         json.dump(devices, f, indent=2)
 
+@app.route('/')
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
